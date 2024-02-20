@@ -2,18 +2,18 @@ import time
 import torch
 import pandas as pd
 import numpy as np
+import datasets
 import torch.nn as nn
 import lightning as L
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 
 from pathlib import Path
-from datasets import Dataset
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoTokenizer, EsmModel
 from lightning.pytorch.loggers import CSVLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 from torchmetrics.functional.classification import multilabel_f1_score
-from pytorch_lightning.strategies import FSDPStrategy
+from lightning.pytorch.strategies import FSDPStrategy
 from transformers.models.esm.modeling_esm import EsmLayer
 
 L.seed_everything(0)
@@ -21,11 +21,11 @@ L.seed_everything(0)
 # data
 data_path = Path("../data/cafa5")
 df = pd.read_parquet(data_path / "top100_train_split.parquet")
-dataset = Dataset.from_pandas(df, preserve_index=False)
+dataset = datasets.Dataset.from_pandas(df, preserve_index=False)
 dataset = dataset.train_test_split(test_size=0.25, seed=0)
 
 # tokenize
-model_name = "facebook/esm2_t6_8M_UR50D"
+model_name = "facebook/esm2_t36_3B_UR50D"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 print("Tokenizer input max length:", tokenizer.model_max_length)
 print("Tokenizer vocabulary size:", tokenizer.vocab_size)
@@ -36,6 +36,7 @@ def tokenize_seqs(batch):
         batch["Sequence"],
         padding="longest",
         truncation=True,
+        max_length=min(1024, tokenizer.model_max_length),
     )
 
 
@@ -206,13 +207,13 @@ layers = {
 }
 strategy = FSDPStrategy(
     auto_wrap_policy=layers,
-    activation_checkpointing_policy=None,
+    activation_checkpointing_policy=layers,
 )
 
 callbacks = [ModelCheckpoint(save_top_k=1, mode="max", monitor="val_f1_score")]
 logger = CSVLogger(save_dir="logs/", name="esm_model_all_fsdp")
 
-trainer = L.Trainer(
+trainer = pl.Trainer(
     max_epochs=3,
     callbacks=callbacks,
     accelerator="cuda",
@@ -220,7 +221,6 @@ trainer = L.Trainer(
     devices=8,
     logger=logger,
     strategy=strategy,
-    deterministic=True,
 )
 
 start = time.time()
