@@ -163,4 +163,5 @@ data/
 models/
 data
 notebooks/logs
-notebooks/finetune_results
+notebooks/finetune_results/
+finetune_results/
