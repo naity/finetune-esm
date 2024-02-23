@@ -165,3 +165,4 @@ data
 notebooks/logs
 notebooks/finetune_results/
 finetune_results/
+mlruns/
