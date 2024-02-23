@@ -7,6 +7,7 @@ import json
 import functools
 import datetime
 import numpy as np
+import lightning as L
 import lightning.pytorch as pl
 
 from typing import Optional
@@ -14,8 +15,9 @@ from typing_extensions import Annotated
 from data import load_data, CustomPreprocessor
 from utils import collate_fn, get_run_id, get_loss_func
 from models import FinetuneESM, ESMLightningModule
-from transformers import AutoTokenizer
+from lora import apply_lora, freeze_all_but_head
 from config import STORAGE_DIR, MLFLOW_TRACKING_URI, logger
+from transformers import AutoTokenizer
 from lightning.pytorch.callbacks import ModelCheckpoint
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 from torch.distributed.fsdp import ShardingStrategy, BackwardPrefetch
@@ -50,12 +52,16 @@ def train_loop_per_worker(config: dict) -> None:
     dropout_p = config["dropout_p"]
     num_classes = config["num_classes"]
     learning_rate = config["learning_rate"]
+    training_mode = config["training_mode"]
     num_epochs = config["num_epochs"]
     num_devices = config["num_devices"]
     batch_size_per_worker = config["batch_size_per_worker"]
     loss_func_name = config["loss_func_name"]
     score_name = config["score_name"]
     verbose = config["verbose"]
+
+    # set random seed
+    L.seed_everything(0)
 
     train_ds = ray.train.get_dataset_shard("train")
     val_ds = ray.train.get_dataset_shard("val")
@@ -75,6 +81,12 @@ def train_loop_per_worker(config: dict) -> None:
         dropout_p=dropout_p,
         num_classes=num_classes,
     )
+
+    # Apply the selected training mode
+    if training_mode == "lora":
+        apply_lora(model)
+    elif training_mode == "head_only":
+        freeze_all_but_head(model)
 
     loss_fn = get_loss_func(loss_func_name)
     lightning_model = ESMLightningModule(
@@ -154,6 +166,9 @@ def train_model(
     learning_rate: Annotated[
         float, typer.Option(help="The learning rate for the optimizer")
     ] = 1e-3,
+    training_mode: Annotated[
+        str, typer.Option(help="Training mode: all_layers, head_only, or lora")
+    ] = "all_layers",
     num_epochs: Annotated[int, typer.Option(help="Number of epochs for training")] = 3,
     num_devices: Annotated[
         int, typer.Option(help="Number of GPUs to use per worker")
@@ -186,6 +201,10 @@ def train_model(
         dropout_p (float, optional): Dropout probability for regularization. Defaults to 0.05.
         num_classes (int, optional): Number of final output dimensions. Defaults to 100.
         learning_rate (float, optional): The learning rate for the optimizer. Defaults to 1e-3.
+        training_mode (str, optional): Training mode to use.
+            - "all_layers": Fine-tune all layers of the model. (default)
+            - "head_only": Freeze all layers except the head layers.
+            - "lora": Apply LoRA (Low-Rank Attention) to specific layers.
         num_epochs (int, optional): Number of epochs for training. Defaults to 3.
         num_devices (int, optional): Number of GPUs to use per worker. Defaults to 1.
         batch_size_per_worker (int, optional): Number of samples per batch for each worker. Defaults to 3.
@@ -202,6 +221,7 @@ def train_model(
         "dropout_p": dropout_p,
         "num_classes": num_classes,
         "learning_rate": learning_rate,
+        "training_mode": training_mode,
         "num_epochs": num_epochs,
         "num_devices": num_devices,
         "batch_size_per_worker": batch_size_per_worker,
