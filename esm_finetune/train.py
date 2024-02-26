@@ -13,7 +13,7 @@ import lightning.pytorch as pl
 from typing import Optional
 from typing_extensions import Annotated
 from data import load_data, CustomPreprocessor
-from utils import collate_fn, get_run_id, get_loss_func
+from utils import collate_fn, get_run_id, get_loss_func, count_trainable_parameters
 from models import FinetuneESM, ESMLightningModule
 from lora import apply_lora, freeze_all_but_head
 from config import STORAGE_DIR, MLFLOW_TRACKING_URI, logger
@@ -87,6 +87,9 @@ def train_loop_per_worker(config: dict) -> None:
         apply_lora(model)
     elif training_mode == "head_only":
         freeze_all_but_head(model)
+
+    if verbose:
+        print(f"# Trainable Parameters: {count_trainable_parameters(model)}")
 
     loss_fn = get_loss_func(loss_func_name)
     lightning_model = ESMLightningModule(
