@@ -58,6 +58,7 @@ def train_loop_per_worker(config: dict) -> None:
     batch_size_per_worker = config["batch_size_per_worker"]
     loss_func_name = config["loss_func_name"]
     score_name = config["score_name"]
+    num_train_samples = config["num_train_samples"]
     verbose = config["verbose"]
 
     # set random seed
@@ -92,8 +93,16 @@ def train_loop_per_worker(config: dict) -> None:
         print(f"# Trainable Parameters: {count_trainable_parameters(model)}")
 
     loss_fn = get_loss_func(loss_func_name)
+
+    # total number of training steps = epochs * steps_per_epoch
+    total_steps = int(num_epochs * np.ceil(num_train_samples / batch_size_per_worker))
+
     lightning_model = ESMLightningModule(
-        model=model, learning_rate=learning_rate, loss_fn=loss_fn, score_name=score_name
+        model,
+        total_steps,
+        learning_rate=learning_rate,
+        loss_fn=loss_fn,
+        score_name=score_name,
     )
 
     callbacks = [RayTrainReportCallback()]
@@ -269,12 +278,16 @@ def train_model(
     # Dataset
     ds = load_data(dataset_loc, num_samples)
     train_ds, val_ds = ds.train_test_split(val_size)
+    num_train_samples = train_ds.count()
     targets = np.load(targets_loc)
     preprocessor = CustomPreprocessor(esm_model, targets)
     train_ds = preprocessor.transform(train_ds)
     val_ds = preprocessor.transform(val_ds)
     train_ds = train_ds.materialize()
     val_ds = val_ds.materialize()
+
+    # need this for lr scheduler
+    train_loop_per_worker["num_train_samples"] = num_train_samples
 
     # Trainer
     trainer = TorchTrainer(

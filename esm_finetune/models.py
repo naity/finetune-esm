@@ -95,6 +95,7 @@ class ESMLightningModule(pl.LightningModule):
 
     Args:
         model: The FinetuneESM model to be trained.
+        total_steps (int): The total number of training steps.
         learning_rate: The learning rate for the optimizer (default: 1e-3).
         loss_fn: The loss function used for training (default: nn.BCEWithLogitsLoss()).
         score_name: The scoring function name used for evaluation (default: multilabel_f1_score).
@@ -103,6 +104,7 @@ class ESMLightningModule(pl.LightningModule):
     def __init__(
         self,
         model: FinetuneESM,
+        total_steps: int,
         learning_rate: float = 1e-3,
         loss_fn: nn.Module = nn.BCEWithLogitsLoss(),
         score_name: Optional[str] = "multilabel_f1_score",
@@ -113,6 +115,7 @@ class ESMLightningModule(pl.LightningModule):
         self.learning_rate = learning_rate
         self.loss_fn = loss_fn
         self.score_name = score_name
+        self.total_steps = total_steps
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """
@@ -195,4 +198,16 @@ class ESMLightningModule(pl.LightningModule):
         optimizer = torch.optim.Adam(
             self.trainer.model.parameters(), lr=self.learning_rate
         )
-        return optimizer
+
+        # one cycle lr scheduler
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer, max_lr=self.learning_rate, total_steps=self.total_steps
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            },
+        }
