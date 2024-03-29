@@ -164,5 +164,6 @@ models/
 data
 notebooks/logs
 notebooks/finetune_results/
+notebooks/deprecated
 finetune_results/
 mlruns/

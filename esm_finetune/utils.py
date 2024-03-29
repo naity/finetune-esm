@@ -2,9 +2,20 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+from typing import Dict, Any
 from config import mlflow
 from ray.train.torch import get_device
 from transformers import AutoTokenizer, EsmModel
+from ray.train.lightning import RayFSDPStrategy
+from ray.train.lightning._lightning_utils import (
+    _LIGHTNING_GREATER_EQUAL_2_0,
+    _TORCH_FSDP_AVAILABLE,
+)
+from torch.distributed.fsdp import (
+    FullStateDictConfig,
+    FullyShardedDataParallel,
+    StateDictType,
+)
 
 
 def collate_fn(
@@ -98,3 +109,28 @@ def get_run_id(experiment_name: str, trial_id: str) -> str:
         filter_string=f"tags.trial_name = '{trial_name}'",
     ).iloc[0]
     return run["run_id"]
+
+
+class CustomRayFSDPStrategy(RayFSDPStrategy):
+    """A custom RayFSDPStrategy to avoid unwanted truncation of `state_dict` keys"""
+
+    def lightning_module_state_dict(self) -> Dict[str, Any]:
+        """Gathers the full state dict to rank 0 on CPU."""
+        assert self.model is not None, "Failed to get the state dict for a None model!"
+
+        if _LIGHTNING_GREATER_EQUAL_2_0 and _TORCH_FSDP_AVAILABLE:
+            with FullyShardedDataParallel.state_dict_type(
+                module=self.model,
+                state_dict_type=StateDictType.FULL_STATE_DICT,
+                state_dict_config=FullStateDictConfig(
+                    offload_to_cpu=True, rank0_only=True
+                ),
+            ):
+                state_dict = self.model.state_dict()
+                # replace "_forward_module." if present instead of using string splicing
+                return {
+                    k.replace("_forward_module.", ""): v for k, v in state_dict.items()
+                }
+        else:
+            # Otherwise Lightning uses Fairscale FSDP, no need to unshard by ourself.
+            return super().lightning_module_state_dict()

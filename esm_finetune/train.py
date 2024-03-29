@@ -13,7 +13,13 @@ import lightning.pytorch as pl
 from typing import Optional
 from typing_extensions import Annotated
 from data import load_data, CustomPreprocessor
-from utils import collate_fn, get_run_id, get_loss_func, count_trainable_parameters
+from utils import (
+    collate_fn,
+    get_run_id,
+    get_loss_func,
+    count_trainable_parameters,
+    CustomRayFSDPStrategy,
+)
 from models import FinetuneESM, ESMLightningModule
 from lora import apply_lora, freeze_all_but_head
 from config import STORAGE_DIR, MLFLOW_TRACKING_URI, logger
@@ -117,7 +123,7 @@ def train_loop_per_worker(config: dict) -> None:
     auto_wrap_policy = functools.partial(
         transformer_auto_wrap_policy, transformer_layer_cls={EsmLayer}
     )
-    strategy = RayFSDPStrategy(
+    strategy = CustomRayFSDPStrategy(
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
         forward_prefetch=True,
