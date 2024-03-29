@@ -124,7 +124,7 @@ def apply_lora(
             )
 
         if lora_mlp:
-            layer.output.dense = linear_with_lora(layer.output.dense)
+            layer.intermediate.dense = linear_with_lora(layer.intermediate.dense)
             layer.output.dense = linear_with_lora(layer.output.dense)
 
     if lora_head:
