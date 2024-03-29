@@ -293,7 +293,7 @@ def train_model(
     val_ds = val_ds.materialize()
 
     # need this for lr scheduler
-    train_loop_per_worker["num_train_samples"] = num_train_samples
+    train_loop_config["num_train_samples"] = num_train_samples
 
     # Trainer
     trainer = TorchTrainer(
