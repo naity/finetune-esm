@@ -77,9 +77,9 @@ This project explores scalable and efficient finetuning of protein language mode
 
 **Highlights**
 
-* Distributed training: Leverage distributed computing for finetuning large protein language models on multiple GPUs.
-* Advanced techniques: Explore LoRA and other methods to improve finetuning efficiency and performance.
-* Reproducibility: Track and manage finetuning experiments using tools like MLflow.
+* **Distributed training**: Leverage distributed computing for finetuning large protein language models on multiple GPUs.
+* **Advanced techniques**: Explore LoRA and other methods to improve finetuning efficiency and performance.
+* **Reproducibility**: Track and manage finetuning experiments using tools like MLflow.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
