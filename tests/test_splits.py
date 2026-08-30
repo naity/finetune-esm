@@ -33,6 +33,21 @@ def test_cold_pdb_split_keeps_groups_intact():
     splits.assert_no_pdb_leakage(rng_df, out)
     assert sum(len(v) for v in out.values()) == 400
 
+    # Verify all splits are non-empty and respect 80/10/10 proportions.
+    for split_name in ["train", "val", "test"]:
+        assert len(out[split_name]) > 0, f"{split_name} is empty"
+
+    total = sum(len(v) for v in out.values())
+    fracs = {
+        "train": len(out["train"]) / total,
+        "val": len(out["val"]) / total,
+        "test": len(out["test"]) / total,
+    }
+    # With 100 groups of 4 rows each, group-level 80/10/10 gives exact row-level 80/10/10.
+    assert abs(fracs["train"] - 0.8) < 0.01, f"train fraction {fracs['train']} deviates from 0.8"
+    assert abs(fracs["val"] - 0.1) < 0.01, f"val fraction {fracs['val']} deviates from 0.1"
+    assert abs(fracs["test"] - 0.1) < 0.01, f"test fraction {fracs['test']} deviates from 0.1"
+
 
 def test_random_split_partitions_every_row_exactly_once():
     df = pd.DataFrame({"pdb": ["X"] * 100})
