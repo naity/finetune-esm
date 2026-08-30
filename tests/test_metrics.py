@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 from scipy import stats
 
@@ -30,7 +31,21 @@ def test_handles_ties_without_error():
 
 
 def test_constant_prediction_is_nan_not_crash():
+    # Test with exactly constant (ones)
     pred = np.ones(10)
+    target = np.arange(10, dtype=float)
+    assert np.isnan(metrics.spearman(pred, target))
+    assert np.isnan(metrics.pearson(pred, target))
+    assert np.isfinite(metrics.rmse(pred, target))
+
+    # Test with realistic "constant" values (floating point near-constant)
+    pred = np.full(7, 1.1)
+    target = np.arange(7, dtype=float)
+    assert np.isnan(metrics.spearman(pred, target))
+    assert np.isnan(metrics.pearson(pred, target))
+    assert np.isfinite(metrics.rmse(pred, target))
+
+    pred = np.full(10, 1234.5678)
     target = np.arange(10, dtype=float)
     assert np.isnan(metrics.spearman(pred, target))
     assert np.isnan(metrics.pearson(pred, target))
@@ -47,3 +62,12 @@ def test_all_metrics_keys():
     rng = np.random.default_rng(1)
     out = metrics.all_metrics(rng.normal(size=30), rng.normal(size=30))
     assert set(out) == {"spearman", "pearson", "rmse"}
+
+
+def test_shape_mismatch_raises():
+    with pytest.raises(ValueError):
+        metrics.rmse(np.zeros((2, 3)), np.zeros((5,)))
+    with pytest.raises(ValueError):
+        metrics.spearman(np.zeros((2, 3)), np.zeros((5,)))
+    with pytest.raises(ValueError):
+        metrics.pearson(np.zeros((2, 3)), np.zeros((5,)))
