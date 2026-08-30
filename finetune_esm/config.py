@@ -1,19 +1,20 @@
-import mlflow
-import logging
+"""Paths and project-wide constants."""
+
 from pathlib import Path
 
-
-# Directories
 ROOT_DIR = Path(__file__).parent.parent.resolve()
-LOGS_DIR = ROOT_DIR / "logs"
-STORAGE_DIR = ROOT_DIR / "finetune_results"
+CACHE_DIR = ROOT_DIR / "embedding_cache"
+RESULTS_DIR = ROOT_DIR / "results"
+MLFLOW_DIR = RESULTS_DIR / "mlflow"
 
-# Config MLflow
-MODEL_REGISTRY = STORAGE_DIR / "mlflow"
-MLFLOW_TRACKING_URI = "file://" + str(MODEL_REGISTRY)
-mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+MLFLOW_TRACKING_URI = "file://" + str(MLFLOW_DIR)
 
+# Dataset coordinates. CC-BY-NC-SA-4.0; the project is non-commercial.
+PPB_REPO = "proteinea/ppb_affinity"
+PPB_FILE = "filtered.csv"
 
-logger = logging.getLogger("mlflow")
-# Set log level to debugging
-logger.setLevel(logging.DEBUG)
+# Chains longer than this are truncated. Affects 0.5% of unique chains.
+MAX_CHAIN_LENGTH = 1022
+
+# Row counts of the authors' split. Any deviation is a bug.
+SPLIT_SIZES = {"train": 6485, "val": 965, "test": 757}
