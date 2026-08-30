@@ -159,9 +159,10 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-data/
-models/
-data
+# Anchored to the repo root: unanchored 'data'/'models' also matched
+# finetune_esm/data/ and finetune_esm/models/, silently un-tracking source files.
+/data/
+/models/
 notebooks/logs
 notebooks/finetune_results/
 notebooks/deprecated
