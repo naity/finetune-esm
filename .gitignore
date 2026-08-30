@@ -167,3 +167,8 @@ notebooks/finetune_results/
 notebooks/deprecated
 finetune_results/
 mlruns/
+# SDD workspace (scratch, per-plan)
+.superpowers/
+
+# Frozen embedding cache (multi-GB, rebuildable)
+embedding_cache/
