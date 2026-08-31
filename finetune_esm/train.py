@@ -1,6 +1,5 @@
 """Command line entrypoints: build the embedding cache, then train."""
 
-import math
 from pathlib import Path
 
 import lightning.pytorch as pl
@@ -33,7 +32,13 @@ def resolve_split(df: pd.DataFrame, split_name: str, seed: int) -> dict[str, np.
 
 
 def compute_total_steps(loader: DataLoader, num_epochs: int) -> int:
-    """Steps the scheduler will actually take, derived from the loader itself.
+    """Maximum number of optimizer steps if training runs the full epoch cap.
+
+    This sizes the `OneCycleLR` schedule from `num_epochs * len(loader)`, not
+    from how long a run actually takes. Early stopping means most runs finish
+    well before `num_epochs`, so in practice the LR schedule never completes:
+    reported checkpoints sit at a mid-schedule (not fully annealed) learning
+    rate.
 
     Floored at 3, not 1: `OneCycleLR(total_steps=...)` raises
     `ZeroDivisionError` internally when `total_steps` is 2 (its
@@ -41,7 +46,7 @@ def compute_total_steps(loader: DataLoader, num_epochs: int) -> int:
     over 2 batches produces exactly the failing value of 2, so the floor
     has to skip it.
     """
-    return max(3, num_epochs * math.ceil(len(loader.dataset) / loader.batch_size))
+    return max(3, num_epochs * len(loader))
 
 
 def _loader(df, idx, store, batch_size, shuffle):
