@@ -265,7 +265,7 @@ the benchmark), Pearson, RMSE in pKd. Mean ± sd over 3 seeds.
 
 1. **Scrambled partner** — replace the receptor with a random receptor from the same split.
 2. **Single partner** — ligand only, and receptor only.
-3. **Trivial features** — the 0.212 floor from §2.1.
+3. **Trivial features** — the 0.229 floor from §2.1.
 4. **Label shuffle** — must collapse to ~0.
 
 ## 7. Experiment plan
