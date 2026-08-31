@@ -53,7 +53,7 @@ def test_targets_and_groups_are_carried_through():
     ds = batching.ComplexDataset(_df(), np.array([0, 1]), FakeStore())
     batch = batching.collate([ds[0], ds[1]])
     assert torch.allclose(batch.target, torch.tensor([7.0, 9.0]))
-    assert batch.group_id.tolist() != [0, 0]  # distinct PDBs get distinct ids
+    assert batch.group_id.tolist() == [0, 1]  # distinct PDBs get distinct ids
 
 
 def test_to_device_is_a_noop_on_cpu():

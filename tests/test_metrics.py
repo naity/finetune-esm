@@ -52,6 +52,23 @@ def test_constant_prediction_is_nan_not_crash():
     assert np.isfinite(metrics.rmse(pred, target))
 
 
+def test_near_constant_prediction_is_nan_via_isclose_guard():
+    # std ~= 2.9e-10, far from exactly 0 but well within floating-point
+    # noise. scipy itself does NOT return NaN here -- it happily reports a
+    # spurious near-1.0 correlation driven entirely by rounding, and a
+    # guard written as `np.std(x) == 0` would fail to catch it (the std is
+    # nonzero). Only `np.isclose(np.std(x), 0.0)` correctly recognizes this
+    # as effectively constant and returns NaN. This test fails if the guard
+    # is reverted from `np.isclose` to an exact `== 0` comparison.
+    pred = np.linspace(1.0, 1.0 + 1e-9, 50)
+    target = np.arange(50, dtype=float)
+    assert np.std(pred) != 0.0  # not exactly constant -- an == 0 guard misses it
+    assert not np.isnan(stats.spearmanr(pred, target).statistic)  # scipy alone: spurious
+    assert np.isnan(metrics.spearman(pred, target))
+    assert np.isnan(metrics.pearson(pred, target))
+    assert np.isfinite(metrics.rmse(pred, target))
+
+
 def test_accepts_torch_tensors():
     pred = torch.arange(20, dtype=torch.float32)
     target = torch.arange(20, dtype=torch.float32)

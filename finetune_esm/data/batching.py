@@ -32,6 +32,11 @@ class ComplexDataset(Dataset):
         self.rows = df.iloc[indices].reset_index(drop=True)
         self.store = store
         self.group_codes = pd.Categorical(self.rows["pdb"]).codes
+        """Integer codes for `self.rows["pdb"]`, assigned by `pd.Categorical`
+        over just this dataset instance's rows. Scoped to this instance only
+        -- not comparable across splits/instances (e.g. group_id 0 in a
+        train-split dataset and group_id 0 in a val-split dataset need not
+        be the same PDB entry)."""
 
     def __len__(self) -> int:
         return len(self.rows)
