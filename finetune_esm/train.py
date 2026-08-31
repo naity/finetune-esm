@@ -68,6 +68,32 @@ def _loader(df, idx, store, batch_size, shuffle):
     )
 
 
+
+def build_fusion(fusion_name: str, dim: int):
+    """Resolve a fusion by name, including the ConvBERT-encoded variants.
+
+    `convbert` and `convbert_<inner>` wrap an inner fusion in a shared ConvBERT
+    residue encoder, which is where the benchmark paper's ConvBERT head sits.
+    Imported lazily: convbert.py imports from fusion.py, so a module-level
+    import here would be circular.
+    """
+    if fusion_name.startswith("convbert"):
+        from finetune_esm.models.convbert import ConvBertFusion
+
+        inner = fusion_name.split("_", 1)[1] if "_" in fusion_name else "hp"
+        if inner not in fusion.FUSIONS:
+            raise KeyError(
+                f"unknown inner fusion {inner!r}; available: {sorted(fusion.FUSIONS)}"
+            )
+        return ConvBertFusion(dim, inner=inner)
+    if fusion_name not in fusion.FUSIONS:
+        raise KeyError(
+            f"unknown fusion {fusion_name!r}; available: "
+            f"{sorted(fusion.FUSIONS)} plus convbert[_<inner>]"
+        )
+    return fusion.FUSIONS[fusion_name](dim)
+
+
 def run_training(
     df: pd.DataFrame,
     store,
@@ -97,7 +123,7 @@ def run_training(
     val_loader = _loader(df, idx["val"], store, batch_size, shuffle=False)
     test_loader = _loader(df, idx["test"], store, batch_size, shuffle=False)
 
-    fuse = fusion.FUSIONS[fusion_name](hidden_dim)
+    fuse = build_fusion(fusion_name, hidden_dim)
     model = module.AffinityModule(
         fuse,
         heads.MLPHead(fuse.out_dim, dropout=dropout),
