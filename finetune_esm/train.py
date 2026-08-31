@@ -94,6 +94,36 @@ def build_fusion(fusion_name: str, dim: int):
     return fusion.FUSIONS[fusion_name](dim)
 
 
+
+def dump_predictions(model, loader, df, test_idx, path: Path) -> Path:
+    """Write per-row test predictions so a result can be decomposed after the fact.
+
+    The test loader is built with shuffle=False, so its order matches
+    `test_idx` positionally. Saving `pdb` alongside lets an analysis split the
+    score into within-complex and between-complex components -- the global
+    Spearman alone cannot distinguish ranking mutants of one complex from
+    ranking whole protein families against each other.
+    """
+    device = next(model.parameters()).device
+    model.eval()
+    preds = []
+    with torch.no_grad():
+        for batch in loader:
+            preds.append(model(batch.to(device)).detach().cpu())
+    rows = df.iloc[test_idx]
+    out = pd.DataFrame(
+        {
+            "row": np.asarray(test_idx),
+            "pdb": rows["pdb"].to_numpy(),
+            "target": rows["pkd"].to_numpy(),
+            "prediction": torch.cat(preds).numpy(),
+        }
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out.to_parquet(path, index=False)
+    return path
+
+
 def run_training(
     df: pd.DataFrame,
     store,
@@ -110,6 +140,7 @@ def run_training(
     patience: int = 5,
     accelerator: str = "auto",
     control: str = "none",
+    predictions_path: Path | None = None,
 ) -> dict[str, float]:
     """Train one configuration and return metrics on its test split."""
     pl.seed_everything(seed, workers=True)
@@ -169,6 +200,10 @@ def run_training(
     )
     trainer.fit(model, train_loader, val_loader)
     (results,) = trainer.test(model, test_loader, ckpt_path=checkpoint.best_model_path)
+
+    if predictions_path is not None:
+        dump_predictions(model, test_loader, df, idx["test"], Path(predictions_path))
+
     return {
         "spearman": results["test_spearman"],
         "pearson": results["test_pearson"],
@@ -208,6 +243,9 @@ def train_command(
     dropout: float = typer.Option(0.1),
     patience: int = typer.Option(5),
     accelerator: str = typer.Option("auto"),
+    save_predictions: str = typer.Option(
+        "", "--save-predictions", help="Parquet path for per-row test predictions"
+    ),
     control: str = typer.Option(
         "none", "--control", help="Ablation control: " + ", ".join(controls.CONTROLS)
     ),
@@ -246,6 +284,7 @@ def train_command(
         patience=patience,
         accelerator=accelerator,
         control=control,
+        predictions_path=Path(save_predictions) if save_predictions else None,
     )
     typer.echo(
         f"{backbone}/{fusion_name}/{split_name}/{control} seed={seed}: "
