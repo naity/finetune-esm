@@ -142,3 +142,41 @@ its position in the ordering implies.
 
 All three runs peaked early — best epochs 2, 1 and 9 of a 30-epoch cap — so the model
 converges fast on 6,485 training rows with a frozen backbone.
+
+## Post-gate diagnostic: does the fusion architecture matter here?
+
+Prompted by the final review's observation that `AttentionPool` at initialisation has
+effective support over 1013 of 1022 residue positions — i.e. it is near-uniform, so early
+in training hierarchical pooling behaves like mean pooling — the other three fusion
+strategies were run on the same cache, same split, seed 0.
+
+| Fusion | Spearman | Pearson | RMSE |
+|---|---|---|---|
+| HP (the E0 configuration) | 0.4310 | 0.4225 | 1.5766 |
+| EC (embedding concatenation) | 0.4366 | 0.4331 | 1.5928 |
+| SC (sequence concatenation) | 0.4449 | 0.4479 | 1.6049 |
+| PAD (pooled attention addition) | 0.4402 | 0.4526 | 1.6327 |
+
+All four land within **0.014** of each other. The benchmark paper's central claim is that
+HP and PAD beat the naive concatenation baselines by *up to 12% Spearman*, which on a 0.47
+baseline is about 0.056 — roughly four times the total spread observed here. The ordering
+is also inverted: **SC, the least structured of the four, scores highest, and HP scores
+lowest.**
+
+This does not by itself refute the paper. It is consistent with at least three readings:
+our fusion modules may not be learning much beyond mean pooling within the few epochs
+early stopping allows; the architecture effect may not survive on this split; or all four
+implementations may converge to similar solutions given a frozen backbone and a small head.
+
+It does, however, change what E0 licenses. The gate remains ACCEPTED — 0.4284 is inside the
+±0.05 band and nearly double the 0.229 floor — but the explanation offered above for the
+residual gap ("our MLP head versus the paper's ConvBERT") is now weakened rather than merely
+untested: if the choice of fusion architecture moves the number by only 0.014 in this
+harness, the head and fusion story is unlikely to account for a 0.04 gap. Note also that
+spec §5.3 called for a ConvBERT head that was never built, so the comparison has still
+never been run.
+
+The practical consequence is that **E1 (the scrambled-partner and single-partner controls)
+should run before anything else**, and this table should be read as a preview of it: four
+different ways of combining the two partners — including one that simply concatenates
+everything and pools once — produce the same answer.
