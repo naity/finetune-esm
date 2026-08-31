@@ -31,7 +31,7 @@
 <h3 align="center">Finetune-ESM</h3>
 
   <p align="center">
-    Scalable Protein Language Model Finetuning with Distributed Learning and Advanced Training Techniques such as LoRA.
+    Protein-protein binding-affinity regression with protein language models, using cached embeddings for fast iteration on a single GPU.
     <br />
     <br />
     <br />
@@ -73,13 +73,27 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-This project explores scalable and efficient finetuning of protein language models like ESM-2 using advanced training techniques like FSDP (Fully Sharded Data Parallel) and LoRA (Low-Rank Adaptation).
+This project fine-tunes protein language models (starting with ESM-2) for **protein-protein
+binding-affinity regression**: given a ligand and receptor sequence, predict pKd
+(−log₁₀ of the dissociation constant KD, in M). It trains and evaluates on
+[`proteinea/ppb_affinity`](https://huggingface.co/datasets/proteinea/ppb_affinity)
+(CC-BY-NC-SA-4.0), a benchmark of 8,207 protein complexes drawn primarily from SKEMPI v2.0
+and PDBbind v2020.
 
 **Highlights**
 
-* **Distributed training**: Leverage distributed computing for finetuning large protein language models on multiple GPUs.
-* **Advanced techniques**: Explore LoRA and other methods to improve finetuning efficiency and performance.
-* **Reproducibility**: Track and manage finetuning experiments using tools like MLflow.
+* **Screening-tier training on cached embeddings**: the backbone is frozen and its
+  per-residue embeddings are cached once, so the full harness (cache build + a 3-seed
+  training sweep) runs in about **15 minutes on one RTX 3090**.
+* **Reproducible, tracked experiments**: per-epoch metrics are logged to MLflow, and
+  checkpoints are written to a run-specific directory (backbone/fusion/split/seed), so
+  runs never collide or overwrite each other.
+* **A measured baseline, not just numbers picked to look good**: see
+  [Reproduction result](#reproduction-result) below.
+
+For the full design rationale — dataset statistics, why the screening/LoRA two-tier
+design, the experiment plan, and what was deliberately deferred — see
+[`docs/superpowers/specs/2026-08-30-ppb-affinity-design.md`](docs/superpowers/specs/2026-08-30-ppb-affinity-design.md).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -91,7 +105,6 @@ This project explores scalable and efficient finetuning of protein language mode
 * [![Pytorch][Pytorch_badge]][Pytorch-url]
 * [![ESM][ESM_badge]][ESM-url]
 * [![Lightning][Lightning_badge]][Lightning-url]
-* [![Ray][Ray_badge]][Ray-url]
 * [![MLflow][MLflow_badge]][MLflow-url]
 * [![Transformers][Transformers_badge]][Transformers-url]
 
@@ -107,17 +120,16 @@ This project explores scalable and efficient finetuning of protein language mode
 git clone https://github.com/naity/finetune-esm.git
 ```
 
-2. Run the `train.py` script to see a list of available parameters:
+2. Install dependencies with [uv](https://docs.astral.sh/uv/):
 ```sh
-python finetune-esm/train.py --help
+uv sync --extra dev
 ```
 
 ### Prerequisites
 
-The `requirements.txt` file lists the Python packages that need to be installed in order to run the scripts. Please use the command below for installation.
-  ```sh
-  pip install -r requirements.txt
-  ```
+* Python >= 3.11
+* A CUDA GPU is strongly recommended for building the embedding cache (`build-cache`);
+  training against a built cache is fast enough to run on CPU for small experiments.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -125,33 +137,46 @@ The `requirements.txt` file lists the Python packages that need to be installed 
 
 <!-- USAGE EXAMPLES -->
 ## Usage
-In this example, we will finetune ESM-2 for the [CAFA 5 Protein Function Prediction Challenge](https://www.kaggle.com/competitions/cafa-5-protein-function-prediction) to predict the biological function of a protein based on its primary sequence.
-I have already preprocessed the data and formatted the problem as a multi-class, multi-label problem. This means that for a given protein sequence, we will predict whether it is positive for each of the 100 preselected Gene Ontology (GO) terms. Thus, the target for each protein sequence is a binary vector with a length of 100.
 
-The processed datasets can be downloaded from [here](https://drive.google.com/drive/folders/1AV46AaOHDn_2lR65R8PIBJKXgz6Xk204?usp=sharing). Details about the preprocessing steps can be found in the `notebooks/cafa5_data_processing.ipynb` notebook.
+The CLI has two commands: build the embedding cache once per backbone, then train (fast,
+repeatable) against that cache.
 
-Run the following example command to finetune ESM-2 models with the processed datasets. Here, we are using the smallest model `esm2_t6_8M_UR50D` with 1 GPU and the LoRA approach. If you want to finetune a larger model and have multiple GPUs, please adjust `num_workers` and/or `num-devices` accordingly.
-```
-python finetune_esm/train.py \
-  --experiment-name esm2_t6_8M_UR50D_lora \
-  --dataset-loc data/cafa5/top100_train_split.parquet \
-  --targets-loc data/cafa5/train_bp_top100_targets.npy \
-  --esm-model esm2_t6_8M_UR50D \
-  --num-workers 1 \
-  --num-devices 1 \
-  --training-mode lora \
-  --learning-rate 0.0001 \
-  --num-epochs 5
+```sh
+# 1. Encode every unique chain in the dataset once and cache the embeddings.
+uv run python -m finetune_esm.train build-cache --backbone esm2-650m --device cuda --batch-size 8
+
+# 2. Train one configuration against the cache (repeat per seed/fusion/split as needed).
+uv run python -m finetune_esm.train train \
+  --backbone esm2-650m --fusion hp --split author --seed 0 \
+  --num-epochs 30 --batch-size 32 --learning-rate 1e-3
 ```
 
-Once training is done, we can use MLflow to view the experiment using:
+Run `uv run python -m finetune_esm.train train --help` for the full set of options,
+including `--loss-name`, `--dropout`, `--patience`, and `--accelerator`.
 
-`mlflow server --host 127.0.0.1 --port 8080 --backend-store-uri ./finetune_results/mlflow`
+Training logs per-epoch metrics to a local MLflow store under `results/mlflow/`. View it with:
 
-Below are screenshots of the example experiment. We can view parameters, artifacts, and visualize the metrics results.
+```sh
+uv run mlflow ui --backend-store-uri results/mlflow
+```
 
-![MLflow Result 1](images/mlflow_result1.png)
-![MLflow Result 2](images/mlflow_result2.png)
+### Reproduction result
+
+The harness was gated on reproducing the benchmark paper's ESM2-650M + HP (frozen) result
+before any further experimentation. Full commands, logs, and analysis are in
+[`results/e0_reproduction.md`](results/e0_reproduction.md); the headline numbers:
+
+| Source | Spearman | Pearson | RMSE |
+|---|---|---|---|
+| **This harness (mean ± sd, 3 seeds, MLP head)** | **0.4284 ± 0.0029** | 0.4178 ± 0.0041 | 1.6045 ± 0.0242 |
+| Published: ESM2-650M + HP, frozen + ConvBERT head | 0.47 | 0.48 | 1.74 |
+| This project's trivial-feature floor (sequence length/composition, no PLM) | 0.229 | 0.226 | 1.896 |
+
+The reproduction was accepted as a gate pass (within the ±0.05 acceptance band and nearly
+double the trivial-feature floor), with the residual gap to the published number most
+plausibly attributed to the head architecture (this harness uses a plain MLP head; the
+published run used ConvBERT). See `results/e0_reproduction.md` for the full gate verdict
+and follow-on diagnostics.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -160,8 +185,10 @@ Below are screenshots of the example experiment. We can view parameters, artifac
 <!-- ROADMAP -->
 ## Roadmap
 
-- [x] Data Processing
-- [x] Training
+- [x] Dataset loading and caching for protein-protein binding affinity
+- [x] Frozen-backbone (screening-tier) training and reproduction of the published baseline
+- [ ] LoRA fine-tuning tier
+- [ ] Loss ablation (margin ranking, ListMLE, soft-Spearman) and group-aware sampling
 - [ ] Serving
 
 See the [open issues](https://github.com/naity/finetune-esm/issues) for a full list of proposed features (and known issues).
@@ -229,8 +256,6 @@ Distributed under the MIT License. See `LICENSE.txt` for more information.
 [Pytorch-url]: https://pytorch.org/
 [Lightning_badge]: https://img.shields.io/badge/Lightning-792EE5?logo=lightning&logoColor=fff&style=flat
 [Lightning-url]: https://lightning.ai/docs/pytorch/stable/
-[Ray_badge]: https://img.shields.io/badge/Ray-028CF0?logo=ray&logoColor=fff&style=flat
-[Ray-url]: https://www.ray.io/
 [Transformers_badge]: https://img.shields.io/badge/%F0%9F%A4%97-Transformers-yellow?style=for-the-badge&style=flat
 [Transformers-url]: https://huggingface.co/docs/transformers/index
 [ESM_badge]: https://img.shields.io/badge/ESM-blue?style=for-the-badge&style=flat
