@@ -20,7 +20,7 @@ from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.loggers import MLFlowLogger
 from torch.utils.data import DataLoader
 
-from finetune_esm import config
+from finetune_esm import config, controls
 from finetune_esm.data import batching, cache, dataset, splits
 from finetune_esm.models import backbones, fusion, heads, module
 
@@ -83,11 +83,15 @@ def run_training(
     loss_name: str = "mse",
     patience: int = 5,
     accelerator: str = "auto",
+    control: str = "none",
 ) -> dict[str, float]:
     """Train one configuration and return metrics on its test split."""
     pl.seed_everything(seed, workers=True)
     idx = resolve_split(df, split_name, seed)
     splits.assert_no_pdb_leakage(df, idx)
+    # Controls are applied after the split is fixed, so the partition and
+    # its leakage guarantee are identical to the uncontrolled run.
+    df = controls.apply_control(df, idx, control, seed=seed)
 
     train_loader = _loader(df, idx["train"], store, batch_size, shuffle=True)
     val_loader = _loader(df, idx["val"], store, batch_size, shuffle=False)
@@ -178,6 +182,9 @@ def train_command(
     dropout: float = typer.Option(0.1),
     patience: int = typer.Option(5),
     accelerator: str = typer.Option("auto"),
+    control: str = typer.Option(
+        "none", "--control", help="Ablation control: " + ", ".join(controls.CONTROLS)
+    ),
 ) -> None:
     """Train one configuration on the cached embeddings."""
     df = dataset.load_complexes()
@@ -212,9 +219,10 @@ def train_command(
         dropout=dropout,
         patience=patience,
         accelerator=accelerator,
+        control=control,
     )
     typer.echo(
-        f"{backbone}/{fusion_name}/{split_name} seed={seed}: "
+        f"{backbone}/{fusion_name}/{split_name}/{control} seed={seed}: "
         f"spearman={out['spearman']:.4f} pearson={out['pearson']:.4f} "
         f"rmse={out['rmse']:.4f}"
     )
