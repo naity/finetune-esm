@@ -173,3 +173,7 @@ mlruns/
 
 # Frozen embedding cache (multi-GB, rebuildable)
 embedding_cache/
+
+# Lightning checkpoint artifacts
+checkpoints/
+*.ckpt
