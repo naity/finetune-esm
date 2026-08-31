@@ -174,6 +174,10 @@ def train_command(
     num_epochs: int = typer.Option(20),
     batch_size: int = typer.Option(32),
     learning_rate: float = typer.Option(1e-3),
+    loss_name: str = typer.Option("mse", "--loss-name"),
+    dropout: float = typer.Option(0.1),
+    patience: int = typer.Option(5),
+    accelerator: str = typer.Option("auto"),
 ) -> None:
     """Train one configuration on the cached embeddings."""
     df = dataset.load_complexes()
@@ -204,6 +208,10 @@ def train_command(
         num_epochs=num_epochs,
         batch_size=batch_size,
         learning_rate=learning_rate,
+        loss_name=loss_name,
+        dropout=dropout,
+        patience=patience,
+        accelerator=accelerator,
     )
     typer.echo(
         f"{backbone}/{fusion_name}/{split_name} seed={seed}: "
