@@ -74,3 +74,67 @@ def test_hierarchical_pooling_uses_chain_structure():
 
 def test_registry_is_complete():
     assert set(fusion.FUSIONS) == {"ec", "sc", "hp", "pad"}
+
+
+@pytest.mark.parametrize("key", ["ec", "sc", "hp", "pad"])
+def test_runs_under_fp16_autocast(key):
+    """Regression: a fixed -1e9 mask fill overflows fp16 and raises under autocast."""
+    torch.manual_seed(0)
+    model = fusion.FUSIONS[key](DIM).eval()
+    batch = _batch()
+    with torch.no_grad(), torch.autocast("cpu", dtype=torch.float16):
+        out = model(batch)
+    assert torch.isfinite(out).all()
+
+
+def test_hierarchical_pooling_mixed_chain_counts_per_batch():
+    """A row's HP output must not depend on how many chains its batch-mates have.
+
+    ``_partner`` sizes n_chains off the batch-wide max chain id, so a row with
+    fewer chains than its batch-mates gets all-False selectors for the extra
+    chain slots. That must be a no-op: each row's output should match running
+    it alone in a batch of one.
+    """
+    torch.manual_seed(0)
+    model = fusion.HierarchicalPooling(DIM).eval()
+    ligand_len, receptor_len = 6, 4
+
+    ligand = torch.randn(2, ligand_len, DIM)
+    ligand_mask = torch.ones(2, ligand_len, dtype=torch.bool)
+    ligand_chain_id = torch.zeros(2, ligand_len, dtype=torch.long)
+    ligand_chain_id[1] = torch.tensor([0, 0, 1, 1, 2, 2])  # row 1: three chains
+
+    receptor = torch.randn(2, receptor_len, DIM)
+    receptor_mask = torch.ones(2, receptor_len, dtype=torch.bool)
+    receptor_chain_id = torch.zeros(2, receptor_len, dtype=torch.long)
+
+    def _row(i: int) -> EmbeddingBatch:
+        return EmbeddingBatch(
+            ligand=ligand[i : i + 1],
+            ligand_mask=ligand_mask[i : i + 1],
+            ligand_chain_id=ligand_chain_id[i : i + 1],
+            receptor=receptor[i : i + 1],
+            receptor_mask=receptor_mask[i : i + 1],
+            receptor_chain_id=receptor_chain_id[i : i + 1],
+            target=torch.zeros(1),
+            group_id=torch.zeros(1, dtype=torch.long),
+        )
+
+    batch = EmbeddingBatch(
+        ligand=ligand,
+        ligand_mask=ligand_mask,
+        ligand_chain_id=ligand_chain_id,
+        receptor=receptor,
+        receptor_mask=receptor_mask,
+        receptor_chain_id=receptor_chain_id,
+        target=torch.zeros(2),
+        group_id=torch.arange(2),
+    )
+
+    with torch.no_grad():
+        batched = model(batch)
+        alone0 = model(_row(0))
+        alone1 = model(_row(1))
+
+    assert torch.allclose(batched[0], alone0[0], atol=1e-4)
+    assert torch.allclose(batched[1], alone1[0], atol=1e-4)

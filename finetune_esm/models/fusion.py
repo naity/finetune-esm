@@ -8,8 +8,6 @@ import torch.nn as nn
 
 from finetune_esm.data.batching import EmbeddingBatch
 
-NEG_INF = -1e9
-
 
 class AttentionPool(nn.Module):
     """Single-query attention pooling over the residue axis."""
@@ -20,7 +18,7 @@ class AttentionPool(nn.Module):
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         logits = self.score(x).squeeze(-1)
-        logits = logits.masked_fill(~mask, NEG_INF)
+        logits = logits.masked_fill(~mask, torch.finfo(logits.dtype).min)
         empty = ~mask.any(dim=-1)
         weights = torch.softmax(logits, dim=-1).unsqueeze(-1)
         pooled = (x * weights * mask.unsqueeze(-1)).sum(dim=1)
