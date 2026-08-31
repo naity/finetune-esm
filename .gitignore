@@ -178,3 +178,6 @@ embedding_cache/
 checkpoints/
 results/checkpoints/
 *.ckpt
+
+# MLflow tracking store
+results/mlflow/

@@ -1,6 +1,15 @@
 """Command line entrypoints: build the embedding cache, then train."""
 
+import os
 from pathlib import Path
+
+# This project intentionally tracks to a local `file://` MLflow store
+# (config.MLFLOW_TRACKING_URI) rather than a database-backed server -- a
+# single-node, single-user showcase repo has no server to run. Recent
+# mlflow versions refuse the filesystem backend by default ("maintenance
+# mode") unless explicitly opted into; set that before mlflow's tracking
+# utilities are imported/used anywhere below.
+os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
 
 import lightning.pytorch as pl
 import numpy as np
@@ -8,6 +17,7 @@ import pandas as pd
 import torch
 import typer
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.loggers import MLFlowLogger
 from torch.utils.data import DataLoader
 
 from finetune_esm import config
@@ -99,10 +109,15 @@ def run_training(
         mode="max",
         save_top_k=1,
     )
+    logger = MLFlowLogger(
+        experiment_name=f"{backbone}-{fusion_name}-{split_name}",
+        run_name=f"seed{seed}",
+        tracking_uri=config.MLFLOW_TRACKING_URI,
+    )
     trainer = pl.Trainer(
         max_epochs=num_epochs,
         accelerator=accelerator,
-        logger=False,
+        logger=logger,
         enable_progress_bar=False,
         callbacks=[
             checkpoint,
