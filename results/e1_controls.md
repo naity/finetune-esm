@@ -1,94 +1,119 @@
 # E1 — What does this benchmark actually measure?
 
-Run 2026-08-30 on a single RTX 3090, branch `research-controls`, against the same
-ESM2-650M embedding cache and the same authors' (≤30% sequence identity) split used
-for the E0 reproduction.
+Run 2026-08-30/31 on a single RTX 3090, branch `research-controls`, against the same
+ESM2-650M embedding cache used for the E0 reproduction. All figures are three seeds.
 
 ## Method
 
-Each control rewrites the dataset so that one specific source of information is
-destroyed, then the model is **trained and evaluated** under that corruption. That
-phrasing matters: the question is not "does a model trained on correct pairs rely on
-the receptor?" but "is this task learnable without the receptor at all?" — a claim
-about the benchmark rather than about one trained model.
+Each control rewrites the dataset so one source of information is destroyed, and the
+model is **trained and evaluated** under that corruption. The question is therefore
+"is this task learnable without the removed information?" — a claim about the benchmark,
+not about one trained model.
 
 Controls are applied after the split is fixed and independently within each split, so
-the partition, its zero-PDB-leakage guarantee, the row count, the PDB grouping and the
-label multiset are all identical to the uncontrolled run. Scrambling uses a derangement,
-so no complex accidentally keeps its true partner.
+the partition, its zero-PDB-leakage guarantee, row counts, PDB grouping and the label
+multiset are unchanged. Scrambling uses a derangement, so nothing keeps its true partner
+by accident.
 
-Configuration throughout: ESM2-650M frozen, hierarchical-pooling fusion, MLP head,
-MSE loss, 30-epoch cap with early stopping on validation Spearman.
+`fixed_receptor` replaces every receptor with a single constant real sequence, so the
+partner carries no per-example information whatsoever — a stricter ablation than
+scrambling, which preserves the marginal distribution of partners.
 
-## Results
+## The four controls (MLP head, authors' ≤30% identity split)
 
-| Control | Spearman (mean ± sd, 3 seeds) | vs. baseline | % of baseline |
+| Control | Spearman | % of baseline |
+|---|---|---|
+| none (correct pairing) | 0.4284 ± 0.0029 | 100.0% |
+| scramble receptor | 0.4129 ± 0.0082 | 96.4% |
+| fixed receptor (no partner information) | 0.4026 ± 0.0088 | 94.0% |
+| fixed ligand † | 0.3053 | 71.3% |
+| **shuffle labels** | **−0.0527** | evaluation is sound |
+
+† one seed.
+
+## Head architecture: the loophole, closed
+
+Spec §5.3 called for a ConvBERT head — the configuration the benchmark paper actually
+used — and the harness plan silently dropped it. That left the E0 gap attributed to a
+control that did not exist. It now exists (`finetune_esm/models/convbert.py`), placed as
+the Ankh/ProtT5 lineage places it: a ConvBERT block over the residue sequence, followed
+by pooling.
+
+| Head | none | receptor removed | Δ | paired t(2) |
+|---|---|---|---|---|
+| MLP | 0.4284 ± 0.0029 | 0.4026 ± 0.0088 | +0.0258 | +5.20 |
+| **ConvBERT** | **0.4215 ± 0.0020** | **0.4174 ± 0.0258** | **+0.0042** | **+0.30** |
+
+Two results, and the second is the important one.
+
+**ConvBERT does not close the gap to the published 0.47.** It scores 0.4215, slightly
+*below* the MLP's 0.4284. So the head architecture is not what separates this harness
+from the published number, and the E0 report's explanation for that gap is now
+falsified rather than merely untested. The remaining 0.0485 is unattributed.
+
+**Under the paper's own head, the binding partner contributes nothing measurable.**
+Removing the receptor entirely costs 0.0042 Spearman, paired t = 0.30 — indistinguishable
+from zero. On one seed the receptor-free model scored *higher* than any run with correct
+pairing. The finding therefore holds against the paper's architecture, not only against a
+simplification of it.
+
+## Split protocol: the variable that actually matters
+
+The same ablation on a cold-PDB split (whole PDB entries held out, but no
+sequence-identity control; each seed builds a different partition, hence the wide spread):
+
+| Split | Baseline | Receptor worth | paired t(2) |
 |---|---|---|---|
-| **none** (correct pairing) | **0.4284 ± 0.0029** | — | 100.0% |
-| scramble receptor (wrong partner) | 0.4129 ± 0.0082 | −0.0156 | 96.4% |
-| **fixed receptor** (receptor carries no information) | **0.4026 ± 0.0088** | **−0.0258** | **94.0%** |
-| fixed ligand (ligand carries no information) † | 0.3053 | −0.123 | 71.3% |
-| shuffle labels | −0.0527 | −0.481 | — |
+| cold-PDB (no identity control) | 0.7258 ± 0.1092 | **0.1517** | +4.45 |
+| authors' ≤30% identity | 0.4284 ± 0.0029 | **0.0258** | +5.20 |
 
-† one seed only.
+**The binding partner is worth 5.9× more on the leakier split.** The natural reading is
+that when homologous complexes appear on both sides of the split, receptor identity helps
+retrieve the near-duplicate — a memorisation route, not interaction modelling. Imposing a
+30% identity threshold closes that route and the contribution collapses.
 
-For scale, on the same harness and split:
+Our cold-split Pearson (0.744) sits close to BALM-PPI's published cold-split figure of
+0.730 on this dataset, which is a reasonable sign the splits behave as intended.
 
-- spread across **all four** fusion architectures (EC/SC/HP/PAD): **0.0139**
-- trivial-feature floor, no PLM at all (length, chain count, composition): **0.229**
-- label-shuffle floor: **−0.053**
+## What actually moves the number
 
-## Reading
+| Intervention | Δ Spearman |
+|---|---|
+| **Changing the split protocol** (cold-PDB → ≤30% identity) | **−0.297** |
+| Removing the binding partner, MLP head | −0.026 |
+| Swapping all four fusion architectures (total spread) | 0.014 |
+| Swapping the head (MLP → ConvBERT) | −0.007 |
+| Removing the binding partner, ConvBERT head | −0.004 |
 
-**Replacing every receptor with a single constant sequence costs 0.026 Spearman.**
-The model keeps 94% of its score when the binding partner is stripped of all
-per-example information. Scrambling the partner instead of removing it costs about the
-same (0.016), which is the consistency one would want: destroying the pairing and
-destroying the partner do comparable, small damage.
-
-So a sequence-based model on this benchmark is close to a **ligand-only predictor**.
-The entire contribution of knowing which protein the ligand actually binds is 0.026,
-which is 3.9 pooled standard deviations — real, but roughly twice the spread between
-four different fusion architectures and about a tenth of the distance from the trivial
-floor to the full score.
-
-That explains the fusion diagnostic recorded in `e0_reproduction.md`: EC, SC, HP and
-PAD land within 0.014 of one another because there is very little interaction signal
-for different fusion strategies to exploit differently. The benchmark paper's central
-claim — that hierarchical pooling and pooled-attention-addition beat naive
-concatenation by up to 12% Spearman — is a claim about modelling an interaction that,
-on this split, contributes about 6% of the score.
-
-**Two supporting readings.** The label shuffle collapses to −0.05, so the evaluation
-protocol is sound and nothing is leaking. And the receptor-only run still reaches 0.305,
-above the 0.229 trivial floor, so both partners carry independent signal — what is
-missing is the *interaction* between them, not the proteins themselves.
+**The evaluation protocol dominates every architectural choice by an order of
+magnitude.** The benchmark paper's contribution is a comparison among the interventions
+in rows 3 and 4 — differences of 0.01 or less in this harness — while row 1, which the
+paper holds fixed, is worth thirty times as much.
 
 ## Caveats
 
-- Measured on this harness, which reproduces at 0.4284 against the published 0.47. If
-  the missing 0.04 were specifically interaction signal that a ConvBERT head captures
-  and ours does not, the picture could differ. The fusion diagnostic makes that
-  unlikely — swapping the entire fusion architecture moves the number by 0.014 — but it
-  has not been tested, because the ConvBERT head that spec §5.3 called for was never built.
-- One fusion (HP), one split (the authors'), three seeds. The cold-PDB and random splits
-  are untested here.
-- These controls corrupt training and evaluation together. The complementary experiment —
-  train on correct pairs, substitute the partner only at inference — measures how much a
-  *trained model* relies on the receptor, and would likely show a larger drop. That is a
-  different question and is not answered here.
-- `fixed_ligand` is a single seed and should not be quoted with precision.
+- One backbone (ESM2-650M), frozen. Three seeds. The random split is untested.
+- Our ConvBERT is a faithful-in-placement reimplementation, not the paper's code; its
+  layer count, width and kernel may differ from theirs.
+- We reproduce at 0.4215–0.4284 against a published 0.47. The residual is now
+  unexplained, and if it were specifically interaction signal these controls would
+  understate the partner's importance.
+- Controls corrupt training and evaluation together. The complementary experiment —
+  train on correct pairs, substitute the partner only at inference — measures a trained
+  model's reliance rather than task learnability, and is not answered here.
+- `fixed_ligand` is one seed and should not be quoted precisely.
 
-## Consequence for the project
+## Consequence
 
-The goal set in the design spec was to beat the published ~0.50 Spearman. That target now
-looks like the less valuable half of the work. Optimising fusion architectures, losses and
-backbones to better predict a quantity that is 94% recoverable without the binding partner
-is optimising a proxy.
+The design spec's goal was to beat the published ~0.50. That is now the less valuable
+half of the work: optimising architecture to better predict a quantity that is 99%
+recoverable without the binding partner — under the paper's own head — is optimising a
+proxy.
 
-The stronger contribution is the critique with a corrected protocol: this benchmark, on its
-own leakage-controlled split, does not require modelling the protein–protein interaction,
-and any architecture comparison run on it is measuring something else. That is directly
-supported by the independent finding (ProtAff, 2026) that a cross-attention affinity model
-scored *higher* with a scrambled target than with the true one — reproduced here on a
-different dataset under a stricter protocol.
+The stronger contribution is a critique with a corrected protocol: on its own
+leakage-controlled split this benchmark does not require modelling the protein–protein
+interaction, architecture comparisons run on it are measuring something else, and the
+split protocol is worth an order of magnitude more than any architectural choice
+compared in the literature. This independently reproduces, on a different dataset and
+under a stricter protocol, ProtAff's 2026 finding that a cross-attention affinity model
+scored higher with a scrambled target than with the true one.
