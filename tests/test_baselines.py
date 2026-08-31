@@ -19,6 +19,6 @@ def test_trivial_features_shape_and_finiteness():
 @pytest.mark.slow
 def test_trivial_baseline_reproduces_measured_floor():
     out = baselines.run_trivial_baseline(seed=0)
-    # Measured during design: Spearman 0.212, Pearson 0.222, RMSE 1.934.
-    assert out["spearman"] == pytest.approx(0.212, abs=0.03)
-    assert out["rmse"] == pytest.approx(1.934, abs=0.10)
+    # Measured from sequence-only feature set on authors' train/test split.
+    assert out["spearman"] == pytest.approx(0.229, abs=0.015)
+    assert out["rmse"] == pytest.approx(1.896, abs=0.05)

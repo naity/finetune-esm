@@ -62,10 +62,13 @@ A meaningful share of published RMSE is uncorrected distribution shift.
 
 ### 2.1 Baseline calibration
 
-A gradient-boosted tree on sequence lengths, chain counts, amino-acid composition,
-and crystal resolution — no PLM — reaches **Spearman 0.212 / Pearson 0.222 /
-RMSE 1.934** on the test split. Any claimed PLM result must be read against this
-floor, not against zero.
+A gradient-boosted tree on sequence lengths, chain counts, length ratio, and
+amino-acid composition — no PLM, no crystallographic metadata — reaches
+**Spearman 0.229 / Pearson 0.226 / RMSE 1.896** on the test split. The baseline
+is deliberately sequence-only: the models it is compared against are sequence-only,
+and crystallographic metadata is a property of the diffraction experiment rather
+than of the molecules themselves (and would not exist for a designed complex). Any
+claimed PLM result must be read against this floor, not against zero.
 
 ## 3. Published results to beat
 
@@ -130,7 +133,7 @@ The benchmark paper's entire thesis is that partner-fusion architecture matters
 (HP/PAD beat naive concatenation by up to 12% Spearman). If a scrambled-partner
 control scores comparably on this benchmark, that thesis does not hold and the
 published architecture ranking measures something other than interaction
-modelling. Combined with the 0.212 trivial-feature floor of §2.1, this is a
+modelling. Combined with the 0.229 trivial-feature floor of §2.1, this is a
 cheap experiment with a large information payoff either way. It runs on cached
 embeddings in under a day.
 
