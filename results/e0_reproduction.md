@@ -101,3 +101,44 @@ early-stopping behavior). The published number, not the number produced here, re
 bar to beat for downstream work.
 
 No gate verdict is recorded in this file.
+
+## Gate verdict (recorded by the controller, after the run)
+
+**ACCEPTED — reproduction succeeded.** Mean Spearman 0.4284 differs from the published
+0.47 by 0.0416, inside the plan's ±0.05 acceptance band. Research may proceed.
+
+Supporting evidence beyond the headline number:
+
+- **Well clear of the floor.** 0.4284 is nearly double this project's trivial-feature
+  baseline of 0.229, so the PLM is contributing real signal rather than re-deriving
+  length and composition.
+- **Stable.** Sample SD across three seeds is 0.0029 — the pipeline is deterministic and
+  the number is not seed luck.
+- **Cache proven, not assumed.** The cached embeddings were compared against a live ESM-2
+  forward pass before any training ran.
+- **The residual gap has a named cause.** Our head is a plain MLP; the published run used
+  a ConvBERT head. The published number remains the bar.
+
+### An observation worth carrying into the research phase
+
+Predicting a single constant for every test complex gives RMSE 1.9162 using the train mean,
+or **1.6145** using the test mean (the best any constant could do — it is just the test
+standard deviation).
+
+| Model | RMSE | vs. oracle constant (1.6145) |
+|---|---|---|
+| This run (MLP head) | 1.6045 | beats it, but only just |
+| Published ESM2-650M + HP (ConvBERT head) | 1.74 | **worse than a constant** |
+| Published best, ProtT5 + PAD | 1.42 | beats it clearly |
+| Trivial features (no PLM) | 1.896 | worse than a constant |
+
+Two things follow. First, our run trails the published Spearman (0.4284 vs 0.47) while
+*beating* its RMSE (1.6045 vs 1.74) — better calibrated, worse ranked. That is the
+signature of optimising MSE while being scored on Spearman, which is the mismatch experiment
+E2 targets. Second, a published result on this benchmark reports an absolute error worse
+than predicting the mean, which suggests the one-log train/test label shift documented in
+spec §2 is going uncorrected and makes the calibration experiment E7 more attractive than
+its position in the ordering implies.
+
+All three runs peaked early — best epochs 2, 1 and 9 of a 30-epoch cap — so the model
+converges fast on 6,485 training rows with a frozen backbone.
