@@ -899,7 +899,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.5" },
     { name = "scipy", specifier = ">=1.13" },
     { name = "torch", specifier = ">=2.6" },
-    { name = "transformers", specifier = ">=4.44" },
+    { name = "transformers", specifier = ">=5.0" },
     { name = "typer", specifier = ">=0.12" },
 ]
 provides-extras = ["dev"]

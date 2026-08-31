@@ -38,3 +38,30 @@ def test_embedding_is_independent_of_batch_composition():
     (alone,) = bb.embed([target])
     together = bb.embed(["MVLSPADKTNVKAAWGKVGAHAGEYGAEAL", target])[1]
     assert np.allclose(alone, together, atol=1e-4)
+
+
+class _FakeTokenizerWrongLayout:
+    """Stands in for a tokenizer with two leading special tokens, e.g. a
+    hypothetical T5-family tokenizer that does not match ESM's layout.
+    """
+
+    def __call__(self, *args, **kwargs):
+        return {"special_tokens_mask": [1, 1, 0, 0, 0, 0, 0, 0, 1]}
+
+
+def test_guard_rejects_backbone_with_unsupported_special_token_layout(monkeypatch):
+    monkeypatch.setattr(
+        backbones.AutoTokenizer,
+        "from_pretrained",
+        lambda *a, **k: _FakeTokenizerWrongLayout(),
+    )
+    with pytest.raises(ValueError, match="special-token"):
+        backbones.Backbone(backbones.BACKBONES["esm2-8m"])
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("key", ["esm2-8m", "esm2-650m"])
+def test_guard_accepts_real_esm_backbones(key):
+    spec = backbones.BACKBONES[key]
+    tokenizer = backbones.AutoTokenizer.from_pretrained(spec.hf_id)
+    backbones._check_special_token_layout(tokenizer, spec)  # must not raise
