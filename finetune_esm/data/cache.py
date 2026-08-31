@@ -17,6 +17,12 @@ POOLED_FILE = "pooled.f16.npy"
 INDEX_FILE = "index.parquet"
 META_FILE = "meta.json"
 
+# Fields that identify *which backbone/config* produced a cache, as opposed
+# to how many chains happen to be in it. Used by `EmbeddingCache`'s `expect`
+# guard so a caller can validate against a cache without first knowing its
+# chain count.
+_IDENTITY_FIELDS = ("backbone", "hf_id", "hidden_dim", "max_length", "dtype")
+
 
 def chain_key(seq: str) -> str:
     """SHA-1 of the sequence. Deduplicates repeated chains across complexes."""
@@ -39,6 +45,15 @@ class CacheMeta:
     def from_json(cls, path: Path) -> "CacheMeta":
         return cls(**json.loads(path.read_text()))
 
+    def identity(self) -> tuple:
+        """The subset of fields that identify the backbone/config that
+        produced a cache, excluding `n_chains`. Two `CacheMeta` with equal
+        `identity()` describe caches built with the same backbone, hf_id,
+        hidden_dim, max_length, and storage dtype -- regardless of how many
+        distinct chains they happen to contain.
+        """
+        return tuple(getattr(self, f) for f in _IDENTITY_FIELDS)
+
 
 def build_cache(
     seqs: Iterable[str],
@@ -49,6 +64,11 @@ def build_cache(
     """Encode every distinct sequence once and write the cache to out_dir."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # meta.json is the completion marker (written last, below). Remove any
+    # existing one up front so a rebuild that dies partway through leaves
+    # the directory with no valid meta.json, rather than a stale one that
+    # lies about freshly (and possibly only partially) rewritten data.
+    (out_dir / META_FILE).unlink(missing_ok=True)
 
     unique: dict[str, str] = {}
     for seq in seqs:
@@ -98,13 +118,57 @@ class EmbeddingCache:
     def __init__(self, out_dir: Path, expect: CacheMeta | None = None) -> None:
         out_dir = Path(out_dir)
         self.meta = CacheMeta.from_json(out_dir / META_FILE)
-        if expect is not None and expect != self.meta:
+
+        if expect is not None and expect.identity() != self.meta.identity():
+            diffs = [
+                f"{field}: expected {getattr(expect, field)!r}, "
+                f"got {getattr(self.meta, field)!r}"
+                for field in _IDENTITY_FIELDS
+                if getattr(expect, field) != getattr(self.meta, field)
+            ]
             raise ValueError(
-                f"cache metadata mismatch: on disk {self.meta}, expected {expect}"
+                f"cache metadata mismatch at {out_dir}: " + "; ".join(diffs)
             )
+
         self._residues = np.load(out_dir / RESIDUES_FILE, mmap_mode="r")
         self._pooled = np.load(out_dir / POOLED_FILE)
         index = pd.read_parquet(out_dir / INDEX_FILE)
+
+        # Always-on internal consistency checks: a cache that loads without
+        # error must have a residues memmap, pooled array, and index that
+        # all genuinely agree with meta.json and with each other. This is
+        # what stops a stale/corrupt index from silently truncating a
+        # slice into a short, plausible-looking, wrong-region read.
+        if self._residues.shape[1] != self.meta.hidden_dim:
+            raise ValueError(
+                f"cache at {out_dir}: residues.shape[1]={self._residues.shape[1]} "
+                f"!= meta.hidden_dim={self.meta.hidden_dim}"
+            )
+        if self._pooled.shape != (self.meta.n_chains, self.meta.hidden_dim):
+            raise ValueError(
+                f"cache at {out_dir}: pooled.shape={self._pooled.shape} != "
+                f"(meta.n_chains, meta.hidden_dim)="
+                f"({self.meta.n_chains}, {self.meta.hidden_dim})"
+            )
+        if len(index) != self.meta.n_chains:
+            raise ValueError(
+                f"cache at {out_dir}: index has {len(index)} rows != "
+                f"meta.n_chains={self.meta.n_chains}"
+            )
+        if len(index) > 0:
+            if (index["offset"] < 0).any() or (index["length"] < 1).any():
+                raise ValueError(
+                    f"cache at {out_dir}: index contains a negative offset "
+                    "or a non-positive length"
+                )
+            max_end = int((index["offset"] + index["length"]).max())
+            if max_end > self._residues.shape[0]:
+                raise ValueError(
+                    f"cache at {out_dir}: index reaches offset+length="
+                    f"{max_end} but residues has only "
+                    f"{self._residues.shape[0]} rows"
+                )
+
         self._index = {
             row.chain_key: (row.offset, row.length, row.row)
             for row in index.itertuples()
