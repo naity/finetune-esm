@@ -62,6 +62,7 @@ def run_training(
     df: pd.DataFrame,
     store,
     hidden_dim: int,
+    backbone: str = "esm2-650m",
     fusion_name: str = "hp",
     split_name: str = "author",
     seed: int = 0,
@@ -91,7 +92,13 @@ def run_training(
         total_steps=compute_total_steps(train_loader, num_epochs),
     )
 
-    checkpoint = ModelCheckpoint(monitor="val_spearman", mode="max", save_top_k=1)
+    run_name = f"{backbone}-{fusion_name}-{split_name}-seed{seed}"
+    checkpoint = ModelCheckpoint(
+        dirpath=config.RESULTS_DIR / "checkpoints" / run_name,
+        monitor="val_spearman",
+        mode="max",
+        save_top_k=1,
+    )
     trainer = pl.Trainer(
         max_epochs=num_epochs,
         accelerator=accelerator,
@@ -175,6 +182,7 @@ def train_command(
         df=df,
         store=store,
         hidden_dim=spec.hidden_dim,
+        backbone=backbone,
         fusion_name=fusion_name,
         split_name=split_name,
         seed=seed,

@@ -176,4 +176,5 @@ embedding_cache/
 
 # Lightning checkpoint artifacts
 checkpoints/
+results/checkpoints/
 *.ckpt
